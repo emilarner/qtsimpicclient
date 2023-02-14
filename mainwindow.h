@@ -84,7 +84,6 @@ private slots:
     void on_nextButton_clicked();
     void on_serverAddress_returnPressed();
     void on_imageClicked(int id);
-    void on_localConnection_clicked();
 
 public slots:
     void on_disconnected(bool closed);
@@ -92,6 +91,7 @@ public slots:
     void on_toggle_next(bool yeah);
     void on_error_msg(QString error);
     void on_local_server_ready();
+    void on_update(int images);
 
 signals:
     void signal_image_receive(QString path, int id);
@@ -99,6 +99,7 @@ signals:
     void signal_error_msg(QString error);
     void signal_local_server_ready();
     void signal_disconnected(bool closed);
+    void signal_update(int images);
 
 private:
     Ui::MainWindow *ui;

@@ -52,23 +52,10 @@
           <property name="toolTip">
            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;The ip:port or domain:port format of the Simpic server to connect to.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
           </property>
+          <property name="text">
+           <string>local</string>
+          </property>
          </widget>
-        </item>
-        <item>
-         <spacer name="horizontalSpacer">
-          <property name="orientation">
-           <enum>Qt::Horizontal</enum>
-          </property>
-          <property name="sizeType">
-           <enum>QSizePolicy::Fixed</enum>
-          </property>
-          <property name="sizeHint" stdset="0">
-           <size>
-            <width>80</width>
-            <height>20</height>
-           </size>
-          </property>
-         </spacer>
         </item>
         <item>
          <widget class="QLineEdit" name="hammingDistance">
@@ -77,16 +64,6 @@
           </property>
           <property name="text">
            <string>3</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="localConnection">
-          <property name="toolTip">
-           <string extracomment="Connect to a ran local instance, instead of connecting to an existing server.">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Connect to a ran local instance, instead of connecting to an existing server. So don't enter anything in for the server domain and address, you won't need it.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-          </property>
-          <property name="text">
-           <string>Local</string>
           </property>
          </widget>
         </item>
@@ -127,9 +104,9 @@
        </widget>
       </item>
       <item>
-       <widget class="QLabel" name="label_4">
+       <widget class="QLabel" name="mediasLoadedLabel">
         <property name="text">
-         <string>Medias Loaded: </string>
+         <string>Images: </string>
         </property>
        </widget>
       </item>

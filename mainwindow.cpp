@@ -69,6 +69,14 @@ MainWindow::MainWindow(QWidget *parent)
 
     QObject::connect(
         this,
+        SIGNAL(signal_toggle_next(bool)),
+        this,
+        SLOT(on_toggle_next(bool)),
+        Qt::ConnectionType::QueuedConnection
+    );
+
+    QObject::connect(
+        this,
         SIGNAL(signal_image_receive(QString, int)),
         this,
         SLOT(on_image_received(QString, int)),
@@ -80,6 +88,14 @@ MainWindow::MainWindow(QWidget *parent)
         SIGNAL(signal_error_msg(QString)),
         this,
         SLOT(on_error_msg(QString)),
+        Qt::ConnectionType::QueuedConnection
+    );
+
+    QObject::connect(
+        this,
+        SIGNAL(signal_update(int)),
+        this,
+        SLOT(on_update(int)),
         Qt::ConnectionType::QueuedConnection
     );
 }
@@ -117,6 +133,12 @@ void MainWindow::on_toggle_next(bool yeah)
     ui->nextButton->setEnabled(yeah);
 }
 
+void MainWindow::on_update(int images)
+{
+    ui->mediasLoadedLabel->setText(QString::fromStdString((std::string)"Images: " + std::to_string(images)));
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+}
+
 void MainWindow::connect(std::string address, int port)
 {
     try
@@ -139,18 +161,27 @@ void MainWindow::connect(std::string address, int port)
     connected = true;
     ui->connectButton->setText("Disconnect");
 
-    bool in_set = false;
-
-    std::thread connection_thread([this, &in_set]() mutable -> void {
+    std::thread connection_thread([this]() mutable -> void {
         std::string dir = this->q_directory.toStdString();
 
         this->no_next = false;
         this->true_no_next = false;
-
         this->ever_progress_bar = false;
+
         try
         {
+            bool in_set = false;
+
+            emit this->signal_toggle_next(false);
+
             this->sc->request(dir, false, this->hamming, (uint8_t)SimpicClientLib::DataTypes::Image, [this, &in_set](void *data, SimpicClientLib::DataTypes type) -> void {
+                if (type == SimpicClientLib::DataTypes::Update)
+                {
+                    struct SimpicClientLib::UpdateHeader *uh = (struct SimpicClientLib::UpdateHeader*) data;
+                    emit this->signal_update(uh->images);
+                    return;
+                }
+
                 std::string filename = "/tmp/" + SimpicClientLib::random_chars(8);
                 /* Beginning of a set. */
                 if (!in_set && data == nullptr)
@@ -262,7 +293,61 @@ void MainWindow::on_connectButton_clicked()
 
     if (str.isEmpty())
     {
-        error("The server address provided was empty.");
+        error("The server address is empty. Cannot proceed.");
+        return;
+    }
+
+    if (str == "local")
+    {
+        hamming = get_reasonable_ham();
+        if (hamming == -1)
+            return;
+
+        if (!this->local_started)
+        {
+            local_thread = std::thread([this]() -> void {
+                try
+                {
+                    SimpicServerLib::SimpicServer srv(
+                        33422,
+                        SimpicServerLib::simpic_folder(SimpicServerLib::home_folder()),
+                        SimpicServerLib::simpic_folder(SimpicServerLib::home_folder()) + "recycling_bin/"
+                    );
+
+                    this->local_started = true;
+
+                    try
+                    {
+                        srv.start();
+                    }
+                    catch (SimpicServerLib::simpic_networking_exception &ex)
+                    {
+                        emit this->signal_error_msg(QString::fromStdString("Error in local connection: " + ex.what()));
+                        this->local_started = false;
+                    }
+                }
+                catch (SimpicServerLib::SimpicMultipleInstanceException &ex)
+                {
+                    emit this->signal_error_msg(QString::fromStdString(
+                        "A Simpic server is already running on this machine, cannot host a local instance."
+                    ));
+                    return;
+                }
+
+            });
+
+            local_thread.detach();
+
+            /* I was hoping I wouldn't have to do this, but it just werkz. */
+            /* The model I tried (an event when Simpic server is ready to accept connections) just yielded */
+            /* Segmentation Fault over and over again, and I didn't want to deal with that bullshit. */
+            /* The SimpicServerLib::SimpicServer class has a member std::function<void()> on_ready */
+            /* callback that will fire whenever the server is ready to accept() connections. */
+            /* If you want to make it work elegantly, then by all means: do it for me and make a pull request! */
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+        }
+
+        connect("0.0.0.0", 33422);
         return;
     }
 
@@ -282,7 +367,7 @@ void MainWindow::on_connectButton_clicked()
     }
     catch (std::out_of_range &ex)
     {
-        MainWindow::error(std::string("Error in parsing the port: ") + ex.what());
+        error(std::string("Error in parsing the port: ") + ex.what());
         return;
     }
 
@@ -396,12 +481,19 @@ void MainWindow::clearMedia()
     /* Delete every item in the QHBoxlayout. */
     while ((tmp = new_horizontal_layout->layout()->takeAt(0)) != nullptr)
     {
-        delete tmp->widget();
-        delete tmp->layout();
-        delete tmp;
+        if (tmp->widget() != nullptr)
+            delete tmp->widget();
+
+        if (tmp->layout() != nullptr)
+            delete tmp->layout();
+
+        if (tmp != nullptr)
+            delete tmp;
     }
 
-    delete new_horizontal_layout;
+    if (new_horizontal_layout != nullptr)
+        delete new_horizontal_layout;
+
     new_horizontal_layout = new QHBoxLayout(scroll_area_contents);
     new_horizontal_layout->setSpacing(2);
     new_horizontal_layout->addStretch();
@@ -412,6 +504,8 @@ void MainWindow::clearMedia()
 
 void MainWindow::on_nextButton_clicked()
 {
+    ui->nextButton->setEnabled(false);
+
     if (!references.size())
     {
         error("There are no other results found.");
@@ -443,64 +537,6 @@ void MainWindow::on_serverAddress_returnPressed()
     on_connectButton_clicked();
 }
 
-
-void MainWindow::on_localConnection_clicked()
-{
-    hamming = get_reasonable_ham();
-    if (hamming == -1)
-        return;
-
-    if (!this->local_started)
-    {
-        local_thread = std::thread([this]() -> void {
-            try
-            {
-                SimpicServerLib::SimpicServer srv(
-                    33422,
-                    SimpicServerLib::simpic_folder(SimpicServerLib::home_folder()),
-                    SimpicServerLib::simpic_folder(SimpicServerLib::home_folder()) + "recycling_bin/"
-                );
-
-                this->local_started = true;
-
-                try
-                {
-                    //srv.on_ready = [this]() -> void {
-                    //    this->signal_local_server_ready();
-                    //};
-
-                    srv.start();
-                }
-                catch (SimpicServerLib::simpic_networking_exception &ex)
-                {
-                    emit this->signal_error_msg(QString::fromStdString("Error in local connection: " + ex.what()));
-                    this->local_started = false;
-                }
-            }
-            catch (SimpicServerLib::SimpicMultipleInstanceException &ex)
-            {
-                emit this->signal_error_msg(QString::fromStdString(
-                    "A Simpic server is already running on this machine, cannot host a local instance."
-                ));
-                return;
-            }
-
-        });
-
-        local_thread.detach();
-
-        /* I was hoping I wouldn't have to do this, but it just werkz. */
-        /* The model I tried (an event when Simpic server is ready to accept connections) just yielded */
-        /* Segmentation Fault over and over again, and I didn't want to deal with that bullshit. */
-        /* The SimpicServerLib::SimpicServer class has a member std::function<void()> on_ready */
-        /* callback that will fire whenever the server is ready to accept() connections. */
-        /* If you want to make it work elegantly, then by all means: do it for me and make a pull request! */
-        std::this_thread::sleep_for(std::chrono::seconds(2));
-    }
-
-    q_directory = ui->directory->text();
-    connect("0.0.0.0", 33422);
-}
 
 void MainWindow::on_local_server_ready()
 {
